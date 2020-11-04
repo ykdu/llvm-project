@@ -41,7 +41,6 @@ namespace {
         void cleanup(CheckerContext &C) const;
 
 
-
         public:
         void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
         void checkEndFunction(const ReturnStmt *RS, CheckerContext &C) const;
