@@ -14,10 +14,14 @@ namespace {
     // To prune branches before '__rpc__', all visited '__rpc__' AST nodes are preserved.
     std::vector<const Expr*> VisitedRPC;
 
+    // To check redefined RPC, all visited RPC names are preserved.
+    std::set<llvm::StringRef> VisitedRPCName;
+
     class DumpPathChecker : public Checker <check::PreCall, check::EndFunction> {
         mutable std::unique_ptr<BugType> BT_MISS_RPC;
         mutable std::unique_ptr<BugType> BT_MISS_END;
         mutable std::unique_ptr<BugType> BT_NESTED_RPC;
+        mutable std::unique_ptr<BugType> BT_REDEFINED_RPC;
 
         typedef void (DumpPathChecker::*FnCheck)(const CallEvent &Call, CheckerContext &C) const;
         CallDescriptionMap<FnCheck> RPCCallbacks = {
@@ -35,8 +39,9 @@ namespace {
         void reportBug_MISS_RPC(CheckerContext &C) const;
         void reportBug_MISS_END(CheckerContext &C) const;
         void reportBug_NESTED_RPC(CheckerContext &C) const;
+        void reportBug_REDEFINED_RPC(CheckerContext &C) const;
 
-        void dumpExpr(const Expr* expr) const;
+        llvm::StringRef getStringFromExpr(const Expr* expr) const;
         void dumpPath(CheckerContext &C) const;
         void cleanup(CheckerContext &C) const;
 
@@ -62,7 +67,7 @@ namespace {
 }
 
 // Maintain an call-stmt list
-REGISTER_LIST_WITH_PROGRAMSTATE(CallList, const Expr*);
+REGISTER_LIST_WITH_PROGRAMSTATE(CallList, const Expr*)
 
 void DumpPathChecker::checkPreCall(const CallEvent &Call , CheckerContext &C) const {
     // Speedup the analysis: pruning calls
@@ -99,14 +104,21 @@ void DumpPathChecker::Entrance(const CallEvent &Call , CheckerContext &C) const 
     }
 
     // Speedup the analysis: pruning pathes
-    // If we've already reached this node on another path, return.
+    // If we've already reached this node on another path, prune.
     if(!VisitedRPC.empty() && VisitedRPC.back() == expr) {
         C.addSink();
         return;
     }
-    else {
-        VisitedRPC.push_back(expr);
+
+    auto RPCName = getStringFromExpr(expr);
+    // Illegal: Redefined RPC
+    if(VisitedRPCName.find(RPCName) != VisitedRPCName.end()) {
+        reportBug_REDEFINED_RPC(C);
+        return;
     }
+
+    VisitedRPC.push_back(expr);
+    VisitedRPCName.insert(RPCName);
 
     state = state->add<CallList>(expr);
     C.addTransition(state);
@@ -128,7 +140,6 @@ void DumpPathChecker::Step(const CallEvent &Call , CheckerContext &C) const {
 
 void DumpPathChecker::Exit(const CallEvent &Call , CheckerContext &C) const {
     ProgramStateRef state = C.getState();
-    const Expr *expr = Call.getArgExpr(0);
 
     // Illegal rule: Missing __rpc__
     if(state->get<CallList>().isEmpty()) {
@@ -164,6 +175,12 @@ void DumpPathChecker::reportBug_NESTED_RPC(CheckerContext &C) const {
     reportBug(BT_NESTED_RPC, C);
 }
 
+void DumpPathChecker::reportBug_REDEFINED_RPC(CheckerContext &C) const {
+    if(!BT_REDEFINED_RPC)
+        BT_REDEFINED_RPC.reset(new BugType(this, "Redefined RPC", "Redefined RPC"));
+    reportBug(BT_REDEFINED_RPC, C);
+}
+
 void DumpPathChecker::reportBug(std::unique_ptr<BugType> &BT, CheckerContext &C) const {
     ExplodedNode *N = C.generateErrorNode();
     if (!N)
@@ -183,13 +200,13 @@ void DumpPathChecker::dumpPath(CheckerContext &C) const {
 
     llvm::outs() << "__end__\n";
     for (const auto &I : state->get<CallList>()) {
-        llvm::outs() << "  " << dyn_cast<StringLiteral>(I->IgnoreParenCasts())->getString().str() << "\n";
+        llvm::outs() << "  " << getStringFromExpr(I) << "\n";
     }
     llvm::outs() << "__rpc__\n\n";
 }
 
-void DumpPathChecker::dumpExpr(const Expr *expr) const {
-    llvm::outs() << dyn_cast<StringLiteral>(expr->IgnoreParenCasts())->getString().str() << "\n";
+StringRef DumpPathChecker::getStringFromExpr(const Expr *expr) const {
+    return dyn_cast<StringLiteral>(expr->IgnoreParenCasts())->getString();
 }
 
 
