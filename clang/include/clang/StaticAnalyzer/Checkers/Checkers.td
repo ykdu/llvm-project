@@ -229,6 +229,10 @@ def NonnullGlobalConstantsChecker: Checker<"NonnilStringConstants">,
   Documentation<NotDocumented>,
   Hidden;
 
+def DumpPathChecker : Checker<"DumpPath">,
+  HelpText<"Dump all possible paths">,
+  Documentation<HasDocumentation>;
+
 } // end "core"
 
 let ParentPackage = CoreAlpha in {
