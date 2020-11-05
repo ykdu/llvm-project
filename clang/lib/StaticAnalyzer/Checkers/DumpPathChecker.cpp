@@ -18,7 +18,7 @@ namespace {
     const unsigned WithoutLen = 2;
 
     // To prune branches before '__rpc__', all visited '__rpc__' AST nodes are preserved.
-    std::vector<const Expr*> VisitedRPC;
+    std::set<const Expr*> VisitedRPC;
 
     // To check redefined RPC, all visited RPC names are preserved.
     std::set<StringRef> VisitedRPCName;
@@ -134,7 +134,7 @@ void DumpPathChecker::Entrance(const CallEvent &Call , CheckerContext &C) const 
 
     // Speedup the analysis: pruning pathes
     // If we've already reached this node on another path, prune.
-    if(!VisitedRPC.empty() && VisitedRPC.back() == expr) {
+    if(VisitedRPC.find(expr) != VisitedRPC.end()) {
         C.addSink();
         return;
     }
@@ -146,7 +146,7 @@ void DumpPathChecker::Entrance(const CallEvent &Call , CheckerContext &C) const 
         return;
     }
 
-    VisitedRPC.push_back(expr);
+    VisitedRPC.insert(expr);
     VisitedRPCName.insert(RPCName);
 
     state = state->add<CallList>(expr);
