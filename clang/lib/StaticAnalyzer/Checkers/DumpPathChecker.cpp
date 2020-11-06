@@ -194,12 +194,13 @@ void DumpPathChecker::StepSendXLength(const CallEvent &Call , CheckerContext &C)
     auto lstate = state->get<NeedSendLength>();
     if(lstate == Undef) {
         state = state->set<NeedSendLength>(WithLen);
-        C.addTransition(state);
     }
-    if(lstate==WithoutLen) {
+    else if(lstate==WithoutLen) {
         reportBug_UNEXPECTED_SEND_LENGTH(C);
         return;
     }
+
+    C.addTransition(state);
 }
 
 void DumpPathChecker::Step(const CallEvent &Call , CheckerContext &C) const {
@@ -295,7 +296,8 @@ unsigned DumpPathChecker::getSendLengthCnt(const Expr *expr, CheckerContext &C) 
  */
 ProgramStateRef DumpPathChecker::incSendLengthCnt(const Expr *expr, CheckerContext &C) const {
     auto signature = getStringFromExpr(expr);
-    return C.getState()->set<PreviousSendLength>(signature, getSendLengthCnt(expr, C) + 1);
+    auto state = C.getState()->set<PreviousSendLength>(signature, getSendLengthCnt(expr, C) + 1);
+    return state;
 }
 
 /*
