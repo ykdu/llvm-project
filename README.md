@@ -1,110 +1,138 @@
-# The LLVM Compiler Infrastructure
+### demo
 
-This directory and its sub-directories contain source code for LLVM,
-a toolkit for the construction of highly optimized compilers,
-optimizers, and run-time environments.
+##### demo1 单个编译单元内检测
 
-The README briefly describes how to get started with building LLVM.
-For more information on how to contribute to the LLVM project, please
-take a look at the
-[Contributing to LLVM](https://llvm.org/docs/Contributing.html) guide.
+1. 根据make long，获取编译命令（已获取好，在csa.sh）
 
-## Getting Started with the LLVM System
+   ```bash
+   make
+   clang -### ... -DSTATIC_ANALYSIS -analyze -analyzer-checker=core.RPC -analyzer-config ipa=none
+   ```
 
-Taken from https://llvm.org/docs/GettingStarted.html.
+   注意到其中的编译选项
 
-### Overview
+   ```bash
+   -DSTATIC_ANALYSIS # 一方面注释掉业务代码中直接使用的gcc pragma，从而避免使用clang时报warning；另一方面使能符号化头文件。
+   -analyze -analyzer-checker=core.RPC # 开启检查。
+   -analyzer-config ipa=none # 因为我们的case中不需要过程间分析，所以关闭以加速。
+   ```
 
-Welcome to the LLVM project!
+2. 检测构造的错误用例
 
-The LLVM project has multiple components. The core of the project is
-itself called "LLVM". This contains all of the tools, libraries, and header
-files needed to process intermediate representations and converts it into
-object files.  Tools include an assembler, disassembler, bitcode analyzer, and
-bitcode optimizer.  It also contains basic regression tests.
+   ```bash
+   # 解开ut
+   ./csa.sh
+   ```
 
-C-like languages use the [Clang](http://clang.llvm.org/) front end.  This
-component compiles C, C++, Objective-C, and Objective-C++ code into LLVM bitcode
--- and from there into object files, using LLVM.
+   应报出5个warning。
 
-Other components include:
-the [libc++ C++ standard library](https://libcxx.llvm.org),
-the [LLD linker](https://lld.llvm.org), and more.
+3. 尝试多分支场景下路径分析是否正确
 
-### Getting the Source Code and Building LLVM
+   ```shell
+   # 解开ut-branch
+   ./csa.sh
+   ```
 
-The LLVM Getting Started documentation may be out of date.  The [Clang
-Getting Started](http://clang.llvm.org/get_started.html) page might have more
-accurate information.
+   注意到其中额外的两个编译选项
 
-This is an example work-flow and configuration to get and build the LLVM source:
+   ```bash
+   -analyzer-config core.RPC:SavePathLocation="/tmp/csa"	 # 表明把路径信息写入到/tmp/csa中
+   -analyzer-config core.RPC:SavePathMode="trunc"  		 # 表明以追加模式写入
+   ```
 
-1. Checkout LLVM (including related sub-projects like Clang):
+   应在/tmp/csa文件中打印出5条RPC路径
 
-     * ``git clone https://github.com/llvm/llvm-project.git``
+4. 检测libapp
 
-     * Or, on windows, ``git clone --config core.autocrlf=false
-    https://github.com/llvm/llvm-project.git``
+   ```bash
+   # 解开libapp
+   ./csa.sh
+   ```
 
-2. Configure and build LLVM and Clang:
+   应报出3个warning。（其中assert所带来的提前return问题在TODO中）
 
-     * ``cd llvm-project``
+##### demo2 跨编译单元检测
 
-     * ``mkdir build``
+ 1. 检测并保存client的路径
 
-     * ``cd build``
+    ```bash
+    # 解开libapp
+    ./csa.sh
+    ```
 
-     * ``cmake -G <generator> [options] ../llvm``
+ 2. 手动添加一个bug
 
-        Some common build system generators are:
+    ```bash
+    #比如，注释掉一个recv()
+    ```
 
-        * ``Ninja`` --- for generating [Ninja](https://ninja-build.org)
-          build files. Most llvm developers use Ninja.
-        * ``Unix Makefiles`` --- for generating make-compatible parallel makefiles.
-        * ``Visual Studio`` --- for generating Visual Studio projects and
-          solutions.
-        * ``Xcode`` --- for generating Xcode projects.
+ 3. 跨单元检测server
 
-        Some Common options:
+    ```bash
+    cd server_engine
+    ./csa.sh
+    ```
 
-        * ``-DLLVM_ENABLE_PROJECTS='...'`` --- semicolon-separated list of the LLVM
-          sub-projects you'd like to additionally build. Can include any of: clang,
-          clang-tools-extra, libcxx, libcxxabi, libunwind, lldb, compiler-rt, lld,
-          polly, or debuginfo-tests.
+    注意到其中的编译选项，用于读入其他编译单元的路径
 
-          For example, to build LLVM, Clang, libcxx, and libcxxabi, use
-          ``-DLLVM_ENABLE_PROJECTS="clang;libcxx;libcxxabi"``.
+    ```bash
+    -analyzer-config core.RPC:LoadPathLocation="/tmp/csa"
+    ```
 
-        * ``-DCMAKE_INSTALL_PREFIX=directory`` --- Specify for *directory* the full
-          path name of where you want the LLVM tools and libraries to be installed
-          (default ``/usr/local``).
 
-        * ``-DCMAKE_BUILD_TYPE=type`` --- Valid options for *type* are Debug,
-          Release, RelWithDebInfo, and MinSizeRel. Default is Debug.
 
-        * ``-DLLVM_ENABLE_ASSERTIONS=On`` --- Compile with assertion checks enabled
-          (default is Yes for Debug builds, No for all other build types).
+### 架构
 
-      * ``cmake --build . [-- [options] <target>]`` or your build system specified above
-        directly.
+<img src="C:\Users\杜云开\Desktop\架构.png" alt="架构" style="zoom:44%;" />
 
-        * The default target (i.e. ``ninja`` or ``make``) will build all of LLVM.
+**符号化**：目的是尽可能在用户代码层面提前删除掉多余代码，避免CSA分析时遇到太多分支等信息。RPC函数重定义为仅包含side effect的等价函数，并记录下后续分析所需的参数信息（包括：RPC块名、RPC API名、RPC调用签名型实参名、RPC调用可选实参名）。模块化为一个单独的头文件，尽量不侵入原应用程序代码。
 
-        * The ``check-all`` target (i.e. ``ninja check-all``) will run the
-          regression tests to ensure everything is in working order.
+**路径仿真器**：由CSA（Clang Static Analyzer）提供，负责给出所有可能的执行路径。path-sensitive指各个分支均会被考虑，而且CSA会利用其约束求解器尽可能计算出哪些分支一定不会进入，从而剪枝掉。
 
-        * CMake will generate targets for each tool and library, and most
-          LLVM sub-projects generate their own ``check-<project>`` target.
+**编译单元内检查器**：在路径仿真的过程中，通过在explored节点中记录相关信息，从而检测出问题。
 
-        * Running a serial build will be **slow**.  To improve speed, try running a
-          parallel build.  That's done by default in Ninja; for ``make``, use the option
-          ``-j NNN``, where ``NNN`` is the number of parallel jobs, e.g. the number of
-          CPUs you have.
+**跨编译单元检查器**：先分析单元1，将其路径信息保存在磁盘文件中；再分析单元2，从磁盘文件中读入单元1的路径信息，再结合路径仿真器分析出的单元2的路径信息，综合检测跨编译单元问题。
 
-      * For more information see [CMake](https://llvm.org/docs/CMake.html)
 
-Consult the
-[Getting Started with LLVM](https://llvm.org/docs/GettingStarted.html#getting-started-with-llvm)
-page for detailed information on configuring and compiling LLVM. You can visit
-[Directory Layout](https://llvm.org/docs/GettingStarted.html#directory-layout)
-to learn about the layout of the source code tree.
+
+### 检测项 & 检测方法
+
+| 单个编译单元检测项        | 含义                  | 检测方法                                                     |
+| ------------------------- | --------------------- | ------------------------------------------------------------ |
+| BT_MISSING_RPC            | 缺少\__rpc__          | 某路径中，在遇到\__rpc__前先遇到了其他RPC APIs               |
+| BT_MISSING_END            | 缺少\__end__          | 函数的分析出口处，某路径依然没有遇到\__end__                 |
+| BT_NESTED_RPC             | 嵌套的RPC块           | 进入\_\_rpc\_\_后，退出\_\_end\_\_前遇到了\_\_rpc\_\_        |
+| BT_REDEFINED_RPC          | 重复定义的RPC块       | 记录遇到过的RPC名，遇到了同名RPC                             |
+| BT_UNEXPECTED_SEND_LENGTH | 不应出现send_X_length | 见代码注释，DFA                                              |
+| BT_MISSING_SEND_LENGTH    | 缺少了send_X_len      | 用一个dict记录出现过的send_X_length，每次遇到send_X都在dict中对该表项的value减1 |
+
+| 跨编译单元检测项              | 含义                                   | 检测方法 |
+| ----------------------------- | -------------------------------------- | -------- |
+| BT_CCU_MISSING_CLIENT         | server中有而client中没有该RPC          |          |
+| BT_CCU_MISSING_SERVER         | client中有而server中没有该RPC          |          |
+| BT_CCU_INDIVIDUAL_SERVER_PATH | server中该路径在client中没有对应的路径 |          |
+| BT_CCU_INDIVIDUAL_CLIENT_PATH | client中该路径在server中没有对应的路径 |          |
+
+
+
+### 使用方法
+
+#TODO待完善
+
+```bash
+-DSTATIC_ANALYSIS 侵入式过滤掉应用程序中gcc强相关的代码
+-analyzer-config core.RPC:SavePathLocation="/tmp/csa"	 # 表明把路径信息写入到/tmp/csa中
+-analyzer-config core.RPC:SavePathMode="trunc"
+-analyzer-config core.RPC:LoadPathLocation="/tmp/csa"
+-O0	#（可选）可加快检测
+```
+
+### 后续
+
+1. ​	循环的处理
+2. ​	当前暂时不支持send buf等
+
+### for 开发者
+
+对CSA开发文档基于新版Clang进行了一些更新，文档中解决了一些接口变化导致的用例不可用问题。 https://github.com/ykdu/clang-analyzer-guide
+

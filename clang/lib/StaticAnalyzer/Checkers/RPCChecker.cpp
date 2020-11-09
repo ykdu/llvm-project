@@ -144,12 +144,12 @@ namespace {
         mutable std::set<const Expr*> _visitedRPC;
 
         // Bug types
-        mutable std::unique_ptr<BugType> BT_MISS_RPC;
-        mutable std::unique_ptr<BugType> BT_MISS_END;
+        mutable std::unique_ptr<BugType> BT_MISSING_RPC;
+        mutable std::unique_ptr<BugType> BT_MISSING_END;
         mutable std::unique_ptr<BugType> BT_NESTED_RPC;
         mutable std::unique_ptr<BugType> BT_REDEFINED_RPC;
         mutable std::unique_ptr<BugType> BT_UNEXPECTED_SEND_LENGTH;
-        mutable std::unique_ptr<BugType> BT_MISS_SEND_LENGTH;
+        mutable std::unique_ptr<BugType> BT_MISSING_SEND_LENGTH;
 
         typedef void (RPCChecker::*FnCheck)(const CallEvent &Call, CheckerContext &C) const;
         CallDescriptionMap<FnCheck> RPCCallbacks = {
@@ -168,12 +168,12 @@ namespace {
 
         // Report bug and set a sink node.
         void reportBug(std::unique_ptr<BugType> &BT, CheckerContext &C) const;
-        void reportBug_MISS_RPC(CheckerContext &C) const;
-        void reportBug_MISS_END(CheckerContext &C) const;
+        void reportBug_MISSING_RPC(CheckerContext &C) const;
+        void reportBug_MISSING_END(CheckerContext &C) const;
         void reportBug_NESTED_RPC(CheckerContext &C) const;
         void reportBug_REDEFINED_RPC(CheckerContext &C) const;
         void reportBug_UNEXPECTED_SEND_LENGTH(CheckerContext &C) const;
-        void reportBug_MISS_SEND_LENGTH(CheckerContext &C) const;
+        void reportBug_MISSING_SEND_LENGTH(CheckerContext &C) const;
 
         /********************* Utils for send_X_length Checker ******************/
         unsigned getSendLengthCnt(const Expr *expr, CheckerContext &C) const;
@@ -275,14 +275,14 @@ void CrossCompilationUnit::crossUnitCheck(std::set<const Expr*> visitedRPC) {
 
         auto iter = clientPathes.find(name);
         if(iter == clientPathes.end()) {
-            llvm::outs() << name << " not found in client\n"; // TODO: report bug
+            llvm::outs() << "\033[0;31mwarning\033[0m: " << name << " not found in client\n"; // TODO: report bug
             continue;
         }
         auto clientSet = iter->second;
 
         iter = serverPathes.find(name);
         if(iter == serverPathes.end()) {
-            llvm::outs() << name << " not found in server\n"; // TODO: report bug
+            llvm::outs() << "\033[0;31mwarning\033[0m: " << name << " not found in server\n"; // TODO: report bug
             continue;
         }
         auto serverSet = iter->second;
@@ -291,14 +291,14 @@ void CrossCompilationUnit::crossUnitCheck(std::set<const Expr*> visitedRPC) {
         std::set_difference(clientSet.begin(), clientSet.end(), serverSet.begin(), serverSet.end(),
                     std::inserter(clientOnly, clientOnly.end()));
         for(const auto &path: clientOnly) {
-            llvm::outs() << "warning: "<< name << ". Path: " << path << "in client has no coresponding path in server\n"; // TODO: report bug
+            llvm::outs() << "\033[0;31mwarning\033[0m: " << name << ". Path: " << path << "in client has no coresponding path in server\n"; // TODO: report bug
         }
 
         std::set<std::string> serverOnly;
         std::set_difference(serverSet.begin(), serverSet.end(), clientSet.begin(), clientSet.end(),
                     std::inserter(serverOnly, serverOnly.begin()));
         for(const auto &path: serverOnly) {
-            llvm::outs() << "warning: "<< name << ". Path: " << path << "in server has no coresponding path in client\n"; // TODO: report bug
+            llvm::outs() << "\033[0;31mwarning\033[0m: "<< name << ". Path: " << path << "in server has no coresponding path in client\n"; // TODO: report bug
         }
     }
 }
@@ -353,7 +353,7 @@ void RPCChecker::checkEndFunction(const ReturnStmt *RS, CheckerContext &C) const
 
     // Illegal: Missing __end__
     if(!state->get<Path>().isEmpty()) {
-        reportBug_MISS_END(C);
+        reportBug_MISSING_END(C);
         return;
     }
 }
@@ -395,7 +395,7 @@ void RPCChecker::stepSendX(const CallEvent &Call , CheckerContext &C) const {
 
     // Illegal: Missing __rpc__
     if(state->get<Path>().isEmpty()) {
-        reportBug_MISS_RPC(C);
+        reportBug_MISSING_RPC(C);
         return;
     }
 
@@ -423,7 +423,7 @@ void RPCChecker::stepSendXLength(const CallEvent &Call , CheckerContext &C) cons
 
     // Illegal: Missing __rpc__
     if(state->get<Path>().isEmpty()) {
-        reportBug_MISS_RPC(C);
+        reportBug_MISSING_RPC(C);
         return;
     }
 
@@ -449,7 +449,7 @@ void RPCChecker::step(const CallEvent &Call , CheckerContext &C) const {
 
     // Illegal: Missing __rpc__
     if(state->get<Path>().isEmpty()) {
-        reportBug_MISS_RPC(C);
+        reportBug_MISSING_RPC(C);
         return;
     }
 
@@ -463,7 +463,7 @@ void RPCChecker::exit(const CallEvent &Call , CheckerContext &C) const {
 
     // Illegal rule: Missing __rpc__
     if(listPath.isEmpty()) {
-        reportBug_MISS_RPC(C);
+        reportBug_MISSING_RPC(C);
         return;
     }
 
@@ -476,16 +476,16 @@ void RPCChecker::exit(const CallEvent &Call , CheckerContext &C) const {
     C.addTransition(state);
 }
 
-void RPCChecker::reportBug_MISS_RPC(CheckerContext &C) const {
-    if(!BT_MISS_RPC)
-        BT_MISS_RPC.reset(new BugType(this, "Missing __rpc__", "Unpaired __rpc__ and __end__"));
-    reportBug(BT_MISS_RPC, C);
+void RPCChecker::reportBug_MISSING_RPC(CheckerContext &C) const {
+    if(!BT_MISSING_RPC)
+        BT_MISSING_RPC.reset(new BugType(this, "Missing __rpc__", "Unpaired __rpc__ and __end__"));
+    reportBug(BT_MISSING_RPC, C);
 }
 
-void RPCChecker::reportBug_MISS_END(CheckerContext &C) const {
-    if(!BT_MISS_END)
-        BT_MISS_END.reset(new BugType(this, "Missing __end__", "Unpaired __rpc__ and __end__"));
-    reportBug(BT_MISS_END, C);
+void RPCChecker::reportBug_MISSING_END(CheckerContext &C) const {
+    if(!BT_MISSING_END)
+        BT_MISSING_END.reset(new BugType(this, "Missing __end__", "Unpaired __rpc__ and __end__"));
+    reportBug(BT_MISSING_END, C);
 }
 
 void RPCChecker::reportBug_NESTED_RPC(CheckerContext &C) const {
@@ -506,10 +506,10 @@ void RPCChecker::reportBug_UNEXPECTED_SEND_LENGTH(CheckerContext &C) const {
     reportBug(BT_UNEXPECTED_SEND_LENGTH, C);
 }
 
-void RPCChecker::reportBug_MISS_SEND_LENGTH(CheckerContext &C) const {
-    if(!BT_MISS_SEND_LENGTH)
-        BT_MISS_SEND_LENGTH.reset(new BugType(this, "Miss rpc_send_X_length", "Send Length"));
-    reportBug(BT_MISS_SEND_LENGTH, C);
+void RPCChecker::reportBug_MISSING_SEND_LENGTH(CheckerContext &C) const {
+    if(!BT_MISSING_SEND_LENGTH)
+        BT_MISSING_SEND_LENGTH.reset(new BugType(this, "Missing rpc_send_X_length", "Send Length"));
+    reportBug(BT_MISSING_SEND_LENGTH, C);
 }
 
 void RPCChecker::reportBug(std::unique_ptr<BugType> &BT, CheckerContext &C) const {
@@ -541,7 +541,7 @@ ProgramStateRef RPCChecker::decSendLengthCnt(const Expr *expr, CheckerContext &C
     unsigned cnt = getSendLengthCnt(expr, C);
 
     if(cnt == 0) {
-        reportBug_MISS_SEND_LENGTH(C);
+        reportBug_MISSING_SEND_LENGTH(C);
         return state;
     }
     return state->set<PreviousSendLength>(signature, cnt - 1);
