@@ -83,7 +83,7 @@
 
 ### 架构
 
-<img src="https://github.com/ykdu/llvm-project/blob/master/arch.png" alt="架构" style="zoom:44%;" />
+<img src="https://github.com/ykdu/llvm-project/blob/master/arch.png" alt="架构" style="zoom:24%;" />
 
 **符号化**：目的是尽可能在用户代码层面提前删除掉多余代码，避免CSA分析时遇到太多分支等信息。RPC函数重定义为仅包含side effect的等价函数，并记录下后续分析所需的参数信息（包括：RPC块名、RPC API名、RPC调用签名型实参名、RPC调用可选实参名）。模块化为一个单独的头文件，尽量不侵入原应用程序代码。
 
