@@ -37,7 +37,6 @@ add_clang_library(clangStaticAnalyzerCheckers
   DereferenceChecker.cpp
   DirectIvarAssignment.cpp
   DivZeroChecker.cpp
-  DumpPathChecker.cpp
   DynamicTypePropagation.cpp
   DynamicTypeChecker.cpp
   EnumCastOutOfRangeChecker.cpp
@@ -97,6 +96,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   ReturnPointerRangeChecker.cpp
   ReturnUndefChecker.cpp
   ReturnValueChecker.cpp
+  RPCChecker.cpp
   RunLoopAutoreleaseLeakChecker.cpp
   SimpleStreamChecker.cpp
   SmartPtrChecker.cpp

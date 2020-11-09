@@ -229,9 +229,27 @@ def NonnullGlobalConstantsChecker: Checker<"NonnilStringConstants">,
   Documentation<NotDocumented>,
   Hidden;
 
-def DumpPathChecker : Checker<"DumpPath">,
-  HelpText<"Dump all possible paths">,
-  Documentation<HasDocumentation>;
+def RPCChecker : Checker<"RPC">,
+  HelpText<"Find bugs caused by illegal usage of Orion's RPC APIs">,
+  CheckerOptions<[
+    CmdLineOption<String,
+                  "LoadPathLocation",
+                  "Load previous pathes from",
+                  "none",
+                  Released>,
+    CmdLineOption<String,
+                  "SavePathLocation",
+                  "Record all possible pathes to",
+                  "none",
+                  Released>,
+    CmdLineOption<String,
+                  "SavePathMode",
+                  "the mode of opening the recorder file, "
+                  "default is trunc",
+                  "trunc",
+                  Released>
+  ]>,
+  Documentation<HasAlphaDocumentation>;
 
 } // end "core"
 
