@@ -58,9 +58,9 @@ namespace {
      *      /                    ^            |
      * Undef                     |-------------
      *      \
-     *       -----(send_length)--------> WithoutLen ----(send_X_length)---->Bug
-     *                           ^                |
-     *                           |--(send_length)--
+     *       -----(send_length)--------> WithoutLen ----(send_X_length)---->Bug----|
+     *                           ^                |                          ^     |
+     *                           |--(send_length)--                          |------
      * */
     struct SendLengthDFA {
         static const unsigned Undef = 0;
@@ -101,14 +101,15 @@ namespace {
     /* Cross compilation unit checker handle
      * */
     class CrossCompilationUnit {
-        public:
-        StringRef loadLocation;
-        StringRef saveLocation;
+        const std::string pathDelimiter = "^";
+        const std::string nameDelimiter = ":";
         bool loaded = false;
         std::map<std::string, std::set<std::string>> clientPathes ;
         std::map<std::string, std::set<std::string>> serverPathes;
-        const std::string pathDelimiter = "^";
-        const std::string nameDelimiter = ":";
+
+        public:
+        StringRef loadLocation;
+        StringRef saveLocation;
 
         // Whether need load previous unit's pathes
         bool whetherLoad();
