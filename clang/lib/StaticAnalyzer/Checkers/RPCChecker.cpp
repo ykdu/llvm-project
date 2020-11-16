@@ -131,22 +131,21 @@ namespace {
         void serialize();
 
         // Find inconsistency bugs between two corss unit
-        void crossUnitCheck(std::set<const Expr*> visitedRPC);
+        void crossUnitCheck(std::map<const Expr*, bool> visitedRPC);
 
         // (For debug)
         void dump();
     };
 
 
-    class RPCChecker : public Checker <check::PreCall, check::EndFunction> {
-        // All visited '__rpc__' AST nodes are preserved.
+    class RPCChecker : public Checker <check::PreCall> {
+        // All visited '__rpc__' AST nodes are preserved. true means rpc has been visited and been closed, false means visited but not closed.
         // 1. To prune branches before '__rpc__'.
         // 2. To check redefined RPC.
-        mutable std::set<const Expr*> _visitedRPC;
+        mutable std::map<const Expr*, bool> _visitedRPC;
 
         // Bug types
         mutable std::unique_ptr<BugType> BT_MISSING_RPC;
-        mutable std::unique_ptr<BugType> BT_MISSING_END;
         mutable std::unique_ptr<BugType> BT_NESTED_RPC;
         mutable std::unique_ptr<BugType> BT_REDEFINED_RPC;
         mutable std::unique_ptr<BugType> BT_UNEXPECTED_SEND_LENGTH;
@@ -170,9 +169,7 @@ namespace {
         // Report bug and set a sink node.
         void reportBug(std::unique_ptr<BugType> &BT, CheckerContext &C) const;
         void reportBug_MISSING_RPC(CheckerContext &C) const;
-        void reportBug_MISSING_END(CheckerContext &C) const;
         void reportBug_NESTED_RPC(CheckerContext &C) const;
-        void reportBug_REDEFINED_RPC(CheckerContext &C) const;
         void reportBug_UNEXPECTED_SEND_LENGTH(CheckerContext &C) const;
         void reportBug_MISSING_SEND_LENGTH(CheckerContext &C) const;
 
@@ -190,7 +187,6 @@ namespace {
         public:
         mutable CrossCompilationUnit ccu;
         void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
-        void checkEndFunction(const ReturnStmt *RS, CheckerContext &C) const;
         ~RPCChecker();
     };
 }
@@ -249,7 +245,7 @@ void CrossCompilationUnit::deserialize() {
 }
 
 void CrossCompilationUnit::serialize() {
-    std::ofstream fs(saveLocation.str(), std::ios_base::out | std::ios_base::trunc);
+    std::ofstream fs(saveLocation.str(), std::ios_base::out | std::ios_base::app);
     for(auto const& I: clientPathes) {
         auto &name = I.first;
         auto &pathSet = I.second;
@@ -268,9 +264,9 @@ void CrossCompilationUnit::serialize() {
     fs.close();
 }
 
-void CrossCompilationUnit::crossUnitCheck(std::set<const Expr*> visitedRPC) {
-    for(const auto &expr : visitedRPC) {
-        auto name = getStringWrapper(expr).get().str();
+void CrossCompilationUnit::crossUnitCheck(std::map<const Expr*, bool> visitedRPC) {
+    for(const auto &I: visitedRPC) {
+        auto name = getStringWrapper(I.first).get().str();
         auto pos = name.find(nameDelimiter);
         name.erase(0, pos + nameDelimiter.length());
 
@@ -292,14 +288,14 @@ void CrossCompilationUnit::crossUnitCheck(std::set<const Expr*> visitedRPC) {
         std::set_difference(clientSet.begin(), clientSet.end(), serverSet.begin(), serverSet.end(),
                     std::inserter(clientOnly, clientOnly.end()));
         for(const auto &path: clientOnly) {
-            llvm::outs() << "\033[0;31mwarning\033[0m: " << name << ". Path: " << path << "in client has no coresponding path in server\n"; // TODO: report bug
+            llvm::outs() << "\033[0;31mwarning\033[0m: " << name << ". Path: " << path << "in client has no corresponding path in server\n"; // TODO: report bug
         }
 
         std::set<std::string> serverOnly;
         std::set_difference(serverSet.begin(), serverSet.end(), clientSet.begin(), clientSet.end(),
                     std::inserter(serverOnly, serverOnly.begin()));
         for(const auto &path: serverOnly) {
-            llvm::outs() << "\033[0;31mwarning\033[0m: "<< name << ". Path: " << path << "in server has no coresponding path in client\n"; // TODO: report bug
+            llvm::outs() << "\033[0;31mwarning\033[0m: "<< name << ". Path: " << path << "in server has no corresponding path in client\n"; // TODO: report bug
         }
     }
 }
@@ -323,6 +319,14 @@ void CrossCompilationUnit::dump() {
 
 
 RPCChecker::~RPCChecker() {
+    // Illegal: Missing __end__
+    for(const auto &I: _visitedRPC) {
+        if(!I.second) {
+            auto name = getStringWrapper(I.first).get().str();
+            llvm::outs() << "\033[0;31mwarning\033[0m: " << "Missing __end__: " << name << "\n"; // TODO: report bug
+        }
+    }
+
     if(ccu.whetherSave()) {
         ccu.serialize();
     }
@@ -344,21 +348,6 @@ void RPCChecker::checkPreCall(const CallEvent &Call , CheckerContext &C) const {
     }
 }
 
-void RPCChecker::checkEndFunction(const ReturnStmt *RS, CheckerContext &C) const {
-    // only analyze __end__ in top frame
-    if (!C.inTopFrame()) {
-        return;
-    }
-
-    ProgramStateRef state = C.getState();
-
-    // Illegal: Missing __end__
-    if(!state->get<Path>().isEmpty()) {
-        reportBug_MISSING_END(C);
-        return;
-    }
-}
-
 void RPCChecker::entrance(const CallEvent &Call , CheckerContext &C) const {
     ProgramStateRef state = C.getState();
     const Expr *expr = Call.getArgExpr(0);
@@ -376,15 +365,7 @@ void RPCChecker::entrance(const CallEvent &Call , CheckerContext &C) const {
         return;
     }
 
-    // Illegal: Redefined RPC
-    for(const auto &I : _visitedRPC) {
-        if(getStringWrapper(I) == getStringWrapper(expr)) {
-            reportBug_REDEFINED_RPC(C);
-            return;
-        }
-    }
-
-    _visitedRPC.insert(expr);
+    _visitedRPC[expr] = false;
 
     state = state->add<Path>(expr);
     C.addTransition(state);
@@ -468,10 +449,17 @@ void RPCChecker::exit(const CallEvent &Call , CheckerContext &C) const {
         return;
     }
 
-    // Pathes are stored into memory if nessisary
+    // Pathes are stored into memory if necissary
     if(ccu.whetherSave() || ccu.whetherLoad()) {
         ccu.addPath(listPath);
     }
+
+    const Expr *expr; // get corresponding __rpc__ node
+    for(const auto &I : listPath) {
+        expr = I;
+    }
+
+    _visitedRPC[expr] = true; // __end__ flag
 
     state = state->remove<Path>();
     C.addTransition(state);
@@ -483,22 +471,10 @@ void RPCChecker::reportBug_MISSING_RPC(CheckerContext &C) const {
     reportBug(BT_MISSING_RPC, C);
 }
 
-void RPCChecker::reportBug_MISSING_END(CheckerContext &C) const {
-    if(!BT_MISSING_END)
-        BT_MISSING_END.reset(new BugType(this, "Missing __end__", "Unpaired __rpc__ and __end__"));
-    reportBug(BT_MISSING_END, C);
-}
-
 void RPCChecker::reportBug_NESTED_RPC(CheckerContext &C) const {
     if(!BT_NESTED_RPC)
         BT_NESTED_RPC.reset(new BugType(this, "Nested RPC", "Unpaired __rpc__ and __end__"));
     reportBug(BT_NESTED_RPC, C);
-}
-
-void RPCChecker::reportBug_REDEFINED_RPC(CheckerContext &C) const {
-    if(!BT_REDEFINED_RPC)
-        BT_REDEFINED_RPC.reset(new BugType(this, "Redefined RPC", "Redefined RPC"));
-    reportBug(BT_REDEFINED_RPC, C);
 }
 
 void RPCChecker::reportBug_UNEXPECTED_SEND_LENGTH(CheckerContext &C) const {
@@ -519,6 +495,13 @@ void RPCChecker::reportBug(std::unique_ptr<BugType> &BT, CheckerContext &C) cons
         return;
     auto Report = std::make_unique<PathSensitiveBugReport>(*BT, BT->getDescription(), N);
     C.emitReport(std::move(Report));
+
+    // Error pathes should not participate in other check rules.
+    const Expr *expr; // get corresponding __rpc__ node
+    for(const auto &I : C.getState()->get<Path>()) {
+        expr = I;
+    }
+    _visitedRPC.erase(expr);
 }
 
 
