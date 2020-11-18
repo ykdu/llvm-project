@@ -228,7 +228,7 @@ void CrossCompilationUnit::addPath(PathTy listPath) {
 
     std::string pathStr;
     for(const auto &I : vectorPath) {
-        pathStr += I + ";";
+        pathStr = I + ";" + pathStr;
     }
     addPath(name, pathStr);
 }
