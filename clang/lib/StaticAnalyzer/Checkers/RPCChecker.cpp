@@ -557,10 +557,6 @@ void ento::registerRPCChecker(CheckerManager &Mgr) {
         Mgr.reportInvalidCheckerOptionValue(Chk, "SavePathLocation", 
                 "cannot set both loadPathLocation and SavePathLocation");
     }
-
-    llvm::outs() << "LoadPathFrom: " << Chk->ccu.loadLocation << "\n";
-    llvm::outs() << "SavePathTo: " << Chk->ccu.saveLocation << "\n";
-    llvm::outs() << "SavePathMode: " << mode << "\n";
 }
 
 bool ento::shouldRegisterRPCChecker(const CheckerManager &mgr) {
