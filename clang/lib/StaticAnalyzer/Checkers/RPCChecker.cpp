@@ -9,9 +9,7 @@
 //   - `-analyzer-config core.RPC:SavePathMode="trunc"'
 //
 // On the way features:
-//   - Broken pathes caused by ealy return should be allowed.
 //   - RPC whitelist.
-//   - The same semantics with different writing style, e.g., void * and void*.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -22,6 +20,7 @@
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include <fstream>
+#include <regex>
 
 using namespace clang;
 using namespace ento;
@@ -201,6 +200,9 @@ bool CrossCompilationUnit::whetherSave() {
 }
 
 void CrossCompilationUnit::addPath(std::string name, const std::string pathStr) {
+    // format pathStr, to unify the same semantic with different writing styles, e.g., void * and void*.
+    std::string str = std::regex_replace(pathStr, std::regex("\\s*\\*\\s*"), "*");
+
     auto pos = name.find(nameDelimiter);
     std::string cs = name.substr(0, pos);
     name.erase(0, pos + nameDelimiter.length());
@@ -208,11 +210,11 @@ void CrossCompilationUnit::addPath(std::string name, const std::string pathStr) 
     auto &pathes = cs == "client" ? clientPathes: serverPathes;
     auto iter = pathes.find(name);
     if(iter == pathes.end()) {
-        std::set<std::string> pathSet = {pathStr};
+        std::set<std::string> pathSet = {str};
         pathes.insert({name, pathSet});
     }
     else {
-        iter->second.insert(pathStr);
+        iter->second.insert(str);
     }
 }
 
@@ -272,14 +274,14 @@ void CrossCompilationUnit::crossUnitCheck(std::map<const Expr*, bool> visitedRPC
 
         auto iter = clientPathes.find(name);
         if(iter == clientPathes.end()) {
-            llvm::outs() << "\033[0;31mwarning\033[0m: " << name << " not found in client\n"; // TODO: report bug
+            // Unused server RPC, not a bug, just continue.
             continue;
         }
         auto clientSet = iter->second;
 
         iter = serverPathes.find(name);
         if(iter == serverPathes.end()) {
-            llvm::outs() << "\033[0;31mwarning\033[0m: " << name << " not found in server\n"; // TODO: report bug
+            llvm::errs() << "warning: Undefined RPC, not found in server. [core.RPC]\n    " << name << "\n";
             continue;
         }
         auto serverSet = iter->second;
@@ -288,14 +290,16 @@ void CrossCompilationUnit::crossUnitCheck(std::map<const Expr*, bool> visitedRPC
         std::set_difference(clientSet.begin(), clientSet.end(), serverSet.begin(), serverSet.end(),
                     std::inserter(clientOnly, clientOnly.end()));
         for(const auto &path: clientOnly) {
-            llvm::outs() << "\033[0;31mwarning\033[0m: " << name << ". Path: " << path << "in client has no corresponding path in server\n"; // TODO: report bug
+            llvm::errs() << "warning: Unique client path, has no corresponding path in server. [core.RPC]\n    " \
+                << name << "'s path ---> " << path << "\n";
         }
 
         std::set<std::string> serverOnly;
         std::set_difference(serverSet.begin(), serverSet.end(), clientSet.begin(), clientSet.end(),
                     std::inserter(serverOnly, serverOnly.begin()));
         for(const auto &path: serverOnly) {
-            llvm::outs() << "\033[0;31mwarning\033[0m: "<< name << ". Path: " << path << "in server has no corresponding path in client\n"; // TODO: report bug
+            llvm::errs() << "warning: Unique server path, has no corresponding path in client. [core.RPC]\n    " \
+                << name << "'s path ---> " << path << "\n";
         }
     }
 }
@@ -323,7 +327,7 @@ RPCChecker::~RPCChecker() {
     for(const auto &I: _visitedRPC) {
         if(!I.second) {
             auto name = getStringWrapper(I.first).get().str();
-            llvm::outs() << "\033[0;31mwarning\033[0m: " << "Missing __end__: " << name << "\n"; // TODO: report bug
+            llvm::errs() << "warning: Missing __end__ [core.RPC]\n    " << name << "\n";
         }
     }
 
