@@ -288,11 +288,13 @@ void CrossCompilationUnit::crossUnitCheck(std::map<const Expr*, bool> visitedRPC
         }
         auto serverSet = iter->second;
 
-        std::set<std::string> clientOnly, serverOnly;
+        std::set<std::string> clientOnly, serverOnly, csCommon;
         std::set_difference(clientSet.begin(), clientSet.end(), serverSet.begin(), serverSet.end(),
                     std::inserter(clientOnly, clientOnly.end()));
         std::set_difference(serverSet.begin(), serverSet.end(), clientSet.begin(), clientSet.end(),
                     std::inserter(serverOnly, serverOnly.begin()));
+        std::set_intersection(clientSet.begin(), clientSet.end(), serverSet.begin(), serverSet.end(),
+                    std::inserter(csCommon, csCommon.end()));
         if(!clientOnly.empty() || !serverOnly.empty()) {
             llvm::errs() << "warning: Unique path [core.RPC]\n";
             for(const auto &path: clientOnly) {
@@ -300,6 +302,10 @@ void CrossCompilationUnit::crossUnitCheck(std::map<const Expr*, bool> visitedRPC
             }
             for(const auto &path: serverOnly) {
                 llvm::errs() << "    server:"   << name << "'s path ---> " << path << "\n";
+            }
+            llvm::errs() << "    where common pathes are:\n";
+            for(const auto &path: csCommon) {
+                llvm::errs() << "        " << path << "\n";
             }
         }
 
