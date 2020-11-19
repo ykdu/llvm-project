@@ -67,6 +67,8 @@ namespace {
         static const unsigned WithoutLen = 2; // must not contain send_X_length
         static const unsigned Bug = 3;
 
+        static unsigned init() { return Undef; }
+
         static unsigned dealSendX(const unsigned currentState) {
             switch(currentState) {
                 case Undef: return WithoutLen;
@@ -88,7 +90,7 @@ namespace {
 }
 
 // Whether rpc_send_X_length is necessary in each rpc block
-REGISTER_TRAIT_WITH_PROGRAMSTATE (NeedSendLength, unsigned)
+REGISTER_TRAIT_WITH_PROGRAMSTATE (SendLengthStat, unsigned)
 
 // Paired send_X/send_X_length
 REGISTER_MAP_WITH_PROGRAMSTATE(PreviousSendLength, StringWrapper, unsigned)
@@ -371,6 +373,7 @@ void RPCChecker::entrance(const CallEvent &Call , CheckerContext &C) const {
 
     _visitedRPC[expr] = false;
 
+    state = state->set<SendLengthStat>(SendLengthDFA::init());
     state = state->add<Path>(expr);
     C.addTransition(state);
 }
@@ -386,7 +389,7 @@ void RPCChecker::stepSendX(const CallEvent &Call , CheckerContext &C) const {
     }
 
     // Updata the SendLength list
-    auto lstate = SendLengthDFA::dealSendX(state->get<NeedSendLength>());
+    auto lstate = SendLengthDFA::dealSendX(state->get<SendLengthStat>());
     if(lstate == SendLengthDFA::WithLen) {
         auto old_state = state;
         state = decSendLengthCnt(expr, C);
@@ -396,7 +399,7 @@ void RPCChecker::stepSendX(const CallEvent &Call , CheckerContext &C) const {
     }
 
     // Update the SendLength DFA
-    state = state->set<NeedSendLength>(lstate);
+    state = state->set<SendLengthStat>(lstate);
     auto explored = C.addTransition(state);
 
     state = state->add<Path>(expr);
@@ -417,8 +420,8 @@ void RPCChecker::stepSendXLength(const CallEvent &Call , CheckerContext &C) cons
     state = incSendLengthCnt(expr, C);
 
     // Update the SendLength DFA
-    auto lstate = SendLengthDFA::dealSendXLength(state->get<NeedSendLength>());
-    state = state->set<NeedSendLength>(lstate);
+    auto lstate = SendLengthDFA::dealSendXLength(state->get<SendLengthStat>());
+    state = state->set<SendLengthStat>(lstate);
 
     // Illegal: Unexpected rpc_send_X_length
     if(lstate == SendLengthDFA::Bug) {
