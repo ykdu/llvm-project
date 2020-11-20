@@ -85,7 +85,7 @@
 
 ### 架构
 
-<img src="https://github.com/ykdu/llvm-project/blob/master/arch.png" alt="架构" style="zoom:24%;" />
+<img src="https://gitlab.virtaitech.com/duyunkai/llvm-project/-/blob/master/arch.png" alt="架构" style="zoom:44%;" />
 
 **符号化**：目的是尽可能在用户代码层面提前删除掉多余代码，避免CSA分析时遇到太多分支等信息。RPC函数重定义为仅包含side effect的等价函数，并记录下后续分析所需的参数信息（包括：RPC块名、RPC API名、RPC调用签名型实参名、RPC调用可选实参名）。模块化为一个单独的头文件，尽量不侵入原应用程序代码。
 
@@ -104,16 +104,14 @@
 | BT_MISSING_RPC            | 缺少\__rpc__          | 某路径中，在遇到\__rpc__前先遇到了其他RPC APIs               |
 | BT_MISSING_END            | 缺少\__end__          | 函数的分析出口处，某路径依然没有遇到\__end__                 |
 | BT_NESTED_RPC             | 嵌套的RPC块           | 进入\_\_rpc\_\_后，退出\_\_end\_\_前遇到了\_\_rpc\_\_        |
-| BT_REDEFINED_RPC          | 重复定义的RPC块       | 记录遇到过的RPC名，遇到了同名RPC                             |
 | BT_UNEXPECTED_SEND_LENGTH | 不应出现send_X_length | 见代码注释，DFA                                              |
 | BT_MISSING_SEND_LENGTH    | 缺少了send_X_len      | 用一个dict记录出现过的send_X_length，每次遇到send_X都在dict中对该表项的value减1 |
 
-| 跨编译单元检测项              | 含义                                   | 检测方法 |
-| ----------------------------- | -------------------------------------- | -------- |
-| BT_CCU_MISSING_CLIENT         | server中有而client中没有该RPC          |          |
-| BT_CCU_MISSING_SERVER         | client中有而server中没有该RPC          |          |
-| BT_CCU_INDIVIDUAL_SERVER_PATH | server中该路径在client中没有对应的路径 |          |
-| BT_CCU_INDIVIDUAL_CLIENT_PATH | client中该路径在server中没有对应的路径 |          |
+| 跨编译单元检测项          | 含义                                   | 检测方法 |
+| ------------------------- | -------------------------------------- | -------- |
+| BT_CCU_UNDEFINED          | client中有而server中没有该RPC          |          |
+| BT_CCU_UNIQUE_SERVER_PATH | server中该路径在client中没有对应的路径 |          |
+| BT_CCU_UNIQUE_CLIENT_PATH | client中该路径在server中没有对应的路径 |          |
 
 
 
@@ -122,7 +120,14 @@
 #TODO待完善
 
 ```bash
--DSTATIC_ANALYSIS 侵入式过滤掉应用程序中gcc强相关的代码
+-analyze -analyzer-checker=core.RPC
+-analyzer-config ipa=none
+-DSTATIC_ANALYSIS 		#侵入式过滤掉应用程序中gcc强相关的代码
+```
+
+可选配置
+
+```bash
 -analyzer-config core.RPC:SavePathLocation="/tmp/csa"	 # 表明把路径信息写入到/tmp/csa中
 -analyzer-config core.RPC:SavePathMode="trunc"
 -analyzer-config core.RPC:LoadPathLocation="/tmp/csa"
@@ -138,3 +143,18 @@
 
 对CSA开发文档基于新版Clang进行了一些更新，文档中解决了一些接口变化导致的用例不可用问题。 https://github.com/ykdu/clang-analyzer-guide
 
+
+
+### QA
+
+1. 为什么不在EndFunction时检测\_\_end\_\_缺失，反而把visitedRPC保存为map，并用其value作为判断？
+
+   提前return也是合法情况，前者回把这种情况识别为错误。所以不应要求所有路径都被关闭，而从另一个角度想，每个不缺少\_\_end\_\_的rpc块都至少有一条路径能走到\_\_end\_\_，因此判断是否确实的条件应是：被关闭过一次就ok。
+   
+2. 为什么副作用要定义为malloc的形式？
+
+   为了使得这里是一个随机值。反之，size_t len{}的话，编译器会知道这里len==0，进而影响后续的分支判断。
+
+3. make CC="clang++ -###" 2>&1 >/dev/null | python ../../check.py -save 的含义
+
+   生成编译日志，并传入脚本中执行
