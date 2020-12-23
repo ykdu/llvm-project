@@ -21,7 +21,16 @@
 
 对CSA开发文档基于新版Clang进行了一些更新，文档中解决了一些接口变化导致的用例不可用问题。 https://github.com/ykdu/clang-analyzer-guide
 
+### 代码仓同步步骤
 
+```bash
+# in github repo（开发）
+    git push
+# in gitlab repo（同步）
+    git remote add upstream https://github.com/ykdu/llvm-project
+    git pull upstream master
+    git push origin master
+```
 
 ### QA
 
