@@ -24,6 +24,7 @@
 ### 代码仓同步步骤
 
 ```bash
+# https://stackoverflow.com/questions/50973048/forking-git-repository-from-github-to-gitlab
 # in github repo（开发）
     git push
 # in gitlab repo（同步）
