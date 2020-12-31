@@ -1,5 +1,14 @@
 # Orion静态分析工具
 
+### 安装
+```bash
+mkdir build
+cd build
+cmake -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_BUILD_TYPE=Release -D CMAKE_C_COMPILER=gcc -D CMAKE_CXX_COMPILER=g++ -G "Unix Makefiles" ../llvm
+make clang -j30
+make install clang -j30
+```
+
 ### 检测项 & 检测方法
 
 | 单个编译单元检测项           | 含义                  | 检测方法                                                     |
